@@ -1,4 +1,3 @@
-#Load important packages
 library(shiny)
 library(DT)
 library(bslib)
@@ -8,7 +7,7 @@ library(readr)
 library(tibble)
 library(ggplot2)
 
-#Define UI for the app
+# Define UI for the app
 ui <- fluidPage(
   titlePanel("Cumulative Paid Claims Calculator"),
   sidebarLayout(
@@ -26,11 +25,19 @@ ui <- fluidPage(
       checkboxInput("data_table", label = "View Your Data Table", value = TRUE)
     ),
     mainPanel(
-      conditionalPanel(
-        condition = "input.data_table == true",
-        dataTableOutput(outputId = "table")
-      ),
-      plotOutput(outputId = "Plot", height = "600px")
+      tabsetPanel(
+        tabPanel(
+          "Cumulative Paid Claims Table",
+          conditionalPanel(
+            condition = "input.data_table == true",
+            dataTableOutput(outputId = "table")
+          )
+        ),
+        tabPanel(
+          "Cumulative Paid Claims Graph",
+          plotOutput(outputId = "Plot", height = "600px")
+        )
+      )
     )
   )
 )
@@ -53,14 +60,13 @@ server <- function(input, output) {
     N <- length(dvlp_years)
     
     df_cumulative <- data.frame(matrix(NA, nrow=length(loss_years), ncol=N+1), row.names=loss_years)
-    colnames(df_cumulative) <- c(as.character(dvlp_years), "Tail")
+    colnames(df_cumulative) <- c(as.character(dvlp_years), as.character(N + 1))
     
     # Fill in the cumulative claims data
     for (j in 1:N) {
       for (i in 1:(length(loss_years) - j + 1)) {
         df_cumulative[i, j] <- sum(df[[claims_col]][df[[loss_year_col]] == loss_years[i] & df[[dvlp_year_col]] <= dvlp_years[j]])
       }
-      
       if (N - j + 2 <= length(loss_years)) {
         for (i in (N - j + 2):length(loss_years)) {
           df_cumulative[i, j] <- sum(df_cumulative[1:(length(loss_years) - j + 1), j], na.rm = TRUE) / 
@@ -68,19 +74,17 @@ server <- function(input, output) {
         }
       }
     }
-    
     return(df_cumulative)
   })
-  
   final_data <- reactive({
     TailFactor <- input$tail_factor
     df_cumulative <- cal_data()
     N <- ncol(df_cumulative) - 1
-    
     if (is.null(df_cumulative))
       return(NULL)
-    
     df_cumulative[, N + 1] <- df_cumulative[, N] * TailFactor
+    # Rename columns
+    colnames(df_cumulative) <- c(1:N, N + 1)
     
     return(round(df_cumulative))
   })
@@ -90,7 +94,6 @@ server <- function(input, output) {
     final_data <- final_data()
     if(is.null(final_data))
       return(NULL)
-    
     if(input$data_table) {
       DT::datatable(data=final_data, options=list(pageLength=10),
                     caption="Rows represent loss year; Columns represent development year")
@@ -100,7 +103,7 @@ server <- function(input, output) {
   # Render the plot
   output$Plot <- renderPlot({
     final_data <- final_data()
-    if(is.null(final_data))
+    if (is.null(final_data))
       return(NULL)
     
     # Prepare the data for plotting
@@ -108,12 +111,10 @@ server <- function(input, output) {
       rownames_to_column(var="loss_year") %>%
       pivot_longer(cols = -loss_year, names_to = "development_year", values_to = "cumulative_claims")
     plot_data$development_year <- as.numeric(plot_data$development_year)
-    
-    #Plot the data
     ggplot(plot_data, mapping=aes(x = development_year, y = cumulative_claims, color = loss_year)) +
       geom_line(size = 1) +
       geom_point(size = 2) +
-      labs(title = "Cumulative Paid Claims ($)",
+      labs(title = "Cumulative Paid Claims Over Development Years",
            x = "Development Year",
            y = "Cumulative Claims ($)",
            color = "Loss Year") +
